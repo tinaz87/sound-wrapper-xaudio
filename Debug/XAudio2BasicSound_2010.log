@@ -1,0 +1,4 @@
+﻿  AudioWrapper.cpp
+c:\program files\microsoft directx sdk (june 2010)\samples\c++\xaudio2\xaudio2basicsound\audiowrapper.cpp(309): warning C4715: 'AudioWrapper::InitializeXAudio': non tutti i percorsi di controllo restituiscono un valore
+c:\program files\microsoft directx sdk (june 2010)\samples\c++\xaudio2\xaudio2basicsound\audiowrapper.cpp(470): warning C4715: 'AudioWrapper::PlayAudio': non tutti i percorsi di controllo restituiscono un valore
+  XAudio2BasicSound_2010.vcxproj -> C:\Program Files\Microsoft DirectX SDK (June 2010)\Samples\C++\XAudio2\XAudio2BasicSound\Debug\XAudio2BasicSound.exe
