@@ -1,7 +1,0 @@
-﻿  SDKwavefile.cpp
-  XXAudioBasicSound_2.cpp
-  AudioWrapper.cpp
-  Generazione del codice in corso...
-c:\users\probook\desktop\master\audio programming\progetto\wrapper\audiowrapper.cpp(309): warning C4715: 'AudioWrapper::InitializeXAudio': non tutti i percorsi di controllo restituiscono un valore
-c:\users\probook\desktop\master\audio programming\progetto\wrapper\audiowrapper.cpp(470): warning C4715: 'AudioWrapper::PlayAudio': non tutti i percorsi di controllo restituiscono un valore
-  XAudio2BasicSound_2010.vcxproj -> C:\Users\PROBOOK\Desktop\MASTER\Audio Programming\Progetto\Wrapper\Debug\XAudio2BasicSound.exe
