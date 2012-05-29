@@ -14,17 +14,17 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="AudioWrapper.h" />
     <ClInclude Include="..\..\DXUT\Optional\SDKwavefile.h">
       <Filter>DXUT</Filter>
     </ClInclude>
-    <ClCompile Include="..\..\DXUT\Optional\SDKwavefile.cpp">
-      <Filter>DXUT</Filter>
-    </ClCompile>
-    <ClInclude Include="AudioWrapper.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="AudioWrapper.cpp" />
     <ClCompile Include="XXAudioBasicSound_2.cpp" />
+    <ClCompile Include="..\..\DXUT\Optional\SDKwavefile.cpp">
+      <Filter>DXUT</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
   </ItemGroup>
