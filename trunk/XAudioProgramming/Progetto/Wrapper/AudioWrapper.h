@@ -8,10 +8,10 @@
 #include <xaudio2.h>
 #include <xaudio2fx.h>
 #include <x3daudio.h>
+
 #include "d3dx9math.h"
 
 #include "SDKwavefile.h"
-
 
 
 //--------------------------------------------------------------------------------------
@@ -52,10 +52,10 @@ static const X3DAUDIO_DISTANCE_CURVE_POINT Emitter_Reverb_CurvePoints[3] = { 0.0
 static const X3DAUDIO_DISTANCE_CURVE       Emitter_Reverb_Curve          = { (X3DAUDIO_DISTANCE_CURVE_POINT*)&Emitter_Reverb_CurvePoints[0], 3 };
 
 // Constants to define our world space
-const INT           XMIN = -10;
-const INT           XMAX = 10;
-const INT           ZMIN = -10;
-const INT           ZMAX = 10;
+const INT           XMIN = -1000;
+const INT           XMAX = 1000;
+const INT           ZMIN = -1000;
+const INT           ZMAX = 1000;
 
 
 
@@ -74,28 +74,133 @@ public:
 
 	HRESULT PlayAudio();
 	
-	void PauseAudio( bool resume );
+	void PauseAudio();
+
+	void ResumeAudio();
+
+	void StopAudio();
 
 	void CleanupAudio();
 
 	~AudioWrapper(){
 
 		pMasteringVoice->DestroyVoice();
+		pSourceVoice->DestroyVoice();
+		pSubmixVoice->DestroyVoice();
+
+		delete pbSampleData;
+
+		delete[] emitterAzimuths;
+		delete[] matrixCoefficients;
+
+		SAFE_RELEASE(pReverbEffect);
 		SAFE_RELEASE(pXAudio2);	
+		
+		
+
 		CoUninitialize();
 	}
 
-	bool isPlaing;
+	inline bool IsPlaing() const{
+
+		return audioState.isPlaing;
+	}
+
+	inline bool IsStopped() const{
+
+		return  audioState.isStopped;
+	}
+
+	inline bool IsPaused() const{
+
+		return audioState.isPaused;
+	}
+
+	inline bool IsLoopActive() const{
+
+		return audioState.Loop;
+	}
+
+	inline bool IsInitialized() const{
+
+		return audioState.isInitialized;
+	}
+
+	inline FLOAT32 GetVolume() const{
+
+		return audioState.volume;
+	}
+
+	inline bool Is3DSoundEnable() const{
+
+		return audioState.sound3DEnabled;
+	}
+
+	inline bool IsReady() const{
+
+		return audioState.isReady;
+	}
+
+	inline void setEmitterPosition(const D3DXVECTOR3& iEPsition){
+
+		vEmitterPos = iEPsition;
+	}
+
+	inline void setListenerPosition(const D3DXVECTOR3& iLPsition){
+
+		vListenerPos = iLPsition;
+	}
+
+	inline void TranslateEmitterPosition(const D3DXVECTOR3& iEPsition){
+
+		vEmitterPos += iEPsition;
+
+	}
+
+	inline void TranslateListenerPosition(const D3DXVECTOR3& iLPsition){
+
+		vListenerPos += iLPsition;
+
+	}
 
 private:
+
+	struct STATE_AUDIO{
+
+		STATE_AUDIO(){
+
+			isInitialized = false;
+			isPaused = false;
+			isPlaing = false;
+			isStopped = false;
+			Loop = false;
+			volume = 0;
+			sound3DEnabled = false;
+			isReady = false;
+
+
+		}
+
+		 bool		isInitialized;
+
+		 bool		isReady;
+
+		 bool		isPlaing;
+		 bool		isPaused;
+		 bool		isStopped;
+
+		 bool		Loop;
+		 FLOAT32	volume;
+
+		 bool		sound3DEnabled;
+
+	};
+
+	STATE_AUDIO audioState;
 
 	WCHAR wavFilePath[ MAX_PATH ];
 
 	void initialize3DSound(XAUDIO2_DEVICE_DETAILS& details);
-
-	/*HRESULT PlayPCM( IXAudio2* pXaudio2, LPCWSTR szFilename );
-
-	HRESULT FindMediaFileCch( WCHAR* strDestPath, int cchDest, LPCWSTR strFilename );*/
 
 	HRESULT hr;
 
@@ -108,6 +213,8 @@ private:
 	IXAudio2SubmixVoice* pSubmixVoice;
 	IUnknown* pReverbEffect;
 	BYTE* pbSampleData;
+	XAUDIO2_BUFFER buffer;
+
 
 	// 3D
 	X3DAUDIO_HANDLE x3DInstance;

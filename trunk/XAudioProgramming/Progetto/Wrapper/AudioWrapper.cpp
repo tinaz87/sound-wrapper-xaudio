@@ -35,89 +35,16 @@ XAUDIO2FX_REVERB_I3DL2_PARAMETERS g_PRESET_PARAMS[ NUM_PRESETS ] =
     XAUDIO2FX_I3DL2_PRESET_PLATE,
 };
 
+
+
 AudioWrapper::AudioWrapper():pXAudio2(nullptr),pMasteringVoice(nullptr)
-							,hr(NULL),isPlaing(false),pSourceVoice(nullptr)
-							,pbSampleData(nullptr)
+							,hr(NULL),pSourceVoice(nullptr)
+							,pbSampleData(nullptr),audioState()
 {
-	// empty
+
 }
 
 
-//--------------------------------------------------------------------------------------//
-
-//HRESULT AudioWrapper::PlayPCM( IXAudio2* pXaudio2, LPCWSTR szFilename )
-//{
-//	
-//	HRESULT hr = S_OK;
-//
-//	//
-//	// Locate the wave file
-//	//
-//	WCHAR strFilePath[MAX_PATH];
-//	if( FAILED( hr = FindMediaFileCch( strFilePath, MAX_PATH, szFilename ) ) )
-//	{
-//		wprintf( L"Failed to find media file: %s\n", szFilename );
-//		return hr;
-//	}
-//
-//	//
-//	// Read in the wave file
-//	//
-//	CWaveFile wav;
-//	if( FAILED( hr = wav.Open( strFilePath, NULL, WAVEFILE_READ ) ) )
-//	{
-//		wprintf( L"Failed reading WAV file: %#X (%s)\n", hr, strFilePath );
-//		return hr;
-//	}
-//
-//	// Get format of wave file
-//	WAVEFORMATEX* pwfx = wav.GetFormat();
-//
-//	// Calculate how many bytes and samples are in the wave
-//	DWORD cbWaveSize = wav.GetSize();
-//
-//	// Read the sample data into memory
-//	BYTE* pbWaveData = new BYTE[ cbWaveSize ];
-//
-//	if( FAILED( hr = wav.Read( pbWaveData, cbWaveSize, &cbWaveSize ) ) )
-//	{
-//		wprintf( L"Failed to read WAV data: %#X\n", hr );
-//		SAFE_DELETE_ARRAY( pbWaveData );
-//		return hr;
-//	}
-//
-//	//
-//	// Play the wave using a XAudio2SourceVoice
-//	//
-//
-//	// Create the source voice
-//	IXAudio2SourceVoice* pSourceVoice;
-//	if( FAILED( hr = pXaudio2->CreateSourceVoice( &pSourceVoice, pwfx ) ) )
-//	{
-//		wprintf( L"Error %#X creating source voice\n", hr );
-//		SAFE_DELETE_ARRAY( pbWaveData );
-//		return hr;
-//	}
-//
-//	// Submit the wave sample data using an XAUDIO2_BUFFER structure
-//	XAUDIO2_BUFFER buffer = {0};
-//	buffer.pAudioData = pbWaveData;
-//	buffer.Flags = XAUDIO2_END_OF_STREAM;  // tell the source voice not to expect any data after this buffer
-//	buffer.AudioBytes = cbWaveSize;
-//
-//	if( FAILED( hr = pSourceVoice->SubmitSourceBuffer( &buffer ) ) )
-//	{
-//		wprintf( L"Error %#X submitting source buffer\n", hr );
-//		pSourceVoice->DestroyVoice();
-//		SAFE_DELETE_ARRAY( pbWaveData );
-//		return hr;
-//	}
-//
-//	hr = pSourceVoice->Start( 0 );
-//	
-//	return hr;
-//}
-//
 
 //--------------------------------------------------------------------------------------
 // Helper function to try to find the location of a media file
@@ -302,15 +229,16 @@ HRESULT AudioWrapper::InitializeXAudio(){
 
 	initialize3DSound(details);
 
-	bInitialized = true;
+	audioState.sound3DEnabled = true;
 
-
+	audioState.isInitialized = true;
+	
 
 }
 
 void AudioWrapper::initialize3DSound(XAUDIO2_DEVICE_DETAILS& details){
 
-	vListenerPos = D3DXVECTOR3( 0, 0, 0 );
+	vListenerPos = D3DXVECTOR3( 0, 0, float( ZMAX ) );
     vEmitterPos = D3DXVECTOR3( 0, 0, float( ZMAX ) );
 
     fListenerAngle = 0;
@@ -439,7 +367,7 @@ HRESULT AudioWrapper::PrepareAudio(const LPCWSTR fileName){
 	}
 
 	// Submit the wave sample data using an XAUDIO2_BUFFER structure
-    XAUDIO2_BUFFER buffer = {0};
+	ZeroMemory(&buffer,sizeof(buffer));
     buffer.pAudioData = pbSampleData;
     buffer.Flags = XAUDIO2_END_OF_STREAM;
     buffer.AudioBytes = cbWaveSize;
@@ -453,21 +381,15 @@ HRESULT AudioWrapper::PrepareAudio(const LPCWSTR fileName){
 	}
 
   
+	audioState.isReady = true;
+
     nFrameToApply3DAudio = 0;
 
     return S_OK;
 
 }
 
-HRESULT AudioWrapper::PlayAudio(){
-	
-	if (FAILED(hr = pSourceVoice->Start( 0 )))
-	{
-		wprintf( L"Failed to Start  : %s\n", wavFilePath );
-		return hr;
-	}
 
-}
 
 HRESULT AudioWrapper::UpdateAudio(float fElapsedTime){
 
@@ -563,23 +485,84 @@ HRESULT AudioWrapper::UpdateAudio(float fElapsedTime){
 
 }
 
-void AudioWrapper::PauseAudio( bool resume )
-{
-    if( !bInitialized )
-        return;
+void AudioWrapper::StopAudio(){
 
-    if( resume )
-        pXAudio2->StartEngine();
-    else
-        pXAudio2->StopEngine();
+	pSourceVoice->Stop(0,XAUDIO2_COMMIT_NOW);
+	pSourceVoice->FlushSourceBuffers();
+
+	buffer.PlayBegin = 0; // Restart Sound
+
+	if (FAILED(hr = pSourceVoice->SubmitSourceBuffer( &buffer )))
+	{
+		wprintf( L"StopAudio: Failed to SubmitSourceBuffer" );
+		return;
+	}
+
+	audioState.isStopped = true;
+	audioState.isPaused = false;
+	audioState.isPlaing = false;
+
+	wprintf( L" Audio Stopped");
 }
 
+
+void AudioWrapper::ResumeAudio(){
+
+	if( !audioState.isInitialized || !audioState.isPaused )
+		return;
+
+	audioState.isPaused = false;
+	audioState.isPlaing = true;
+
+	wprintf( L" Audio Resume");
+	pXAudio2->StartEngine();
+}
+
+void AudioWrapper::PauseAudio()
+{
+    if( !audioState.isInitialized || !audioState.isPlaing )
+        return;
+
+	audioState.isPaused = true;
+	audioState.isPlaing = false;
+
+	wprintf( L" Audio Paused");
+    pXAudio2->StopEngine();
+	
+}
+
+
+HRESULT AudioWrapper::PlayAudio(){
+
+	// Se non è gia in Play allora falla  partire
+	if ( ( !audioState.isPlaing && !audioState.isPaused ) && FAILED(hr = pSourceVoice->Start( 0 )))
+	{
+		wprintf( L"Failed to Start  : %s\n", wavFilePath );
+		return hr;
+	}
+
+	audioState.isStopped = false;
+	// Se tento di fare play mentre sono in pausa
+	if ( audioState.isPaused ){
+		wprintf( L" Audio is Paused");
+		audioState.isPlaing = false;
+		
+
+	}else{
+		wprintf( L" Audio Plaing");
+		audioState.isPlaing = true;
+		
+	}
+
+	return hr;
+
+}
 //-----------------------------------------------------------------------------
 // Releases XAudio2
 //-----------------------------------------------------------------------------
 void AudioWrapper::CleanupAudio()
 {
-    if( !bInitialized )
+    if( !audioState.isInitialized )
         return;
 
     if( pSourceVoice )
@@ -608,24 +591,5 @@ void AudioWrapper::CleanupAudio()
 
     CoUninitialize();
 
-    bInitialized = false;
+    audioState.isInitialized = false;
 }
-
-//HRESULT AudioWrapper::Play(LPCWSTR fileName){
-//
-//
-//	wprintf( L"\nPlaying WAV PCM file..." );
-//
-//
-//	hr = PlayPCM( pXAudio2, fileName );
-//
-//	if( FAILED( hr )  )
-//	{
-//		wprintf( L"Failed creating source voice: %#X\n", hr );
-//		SAFE_RELEASE( pXAudio2 );
-//		return 0;
-//	}
-//
-//	return 1;
-//}
-//
