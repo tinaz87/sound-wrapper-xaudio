@@ -59,14 +59,84 @@ const INT           ZMAX = 1000;
 
 
 
+class InitAudioWrapper{
+
+public :
+	
+	InitAudioWrapper();
+
+	HRESULT InitializeXAudio();
+
+	~InitAudioWrapper(){
+
+		pMasteringVoice->DestroyVoice();
+
+		pSubmixVoice->DestroyVoice();
+
+
+
+		delete[] emitterAzimuths;
+		delete[] matrixCoefficients;
+
+		SAFE_RELEASE(pReverbEffect);
+		SAFE_RELEASE(pXAudio2);	
+
+
+
+		CoUninitialize();
+	
+	
+	}
+
+private:
+
+	void initialize3DSound(XAUDIO2_DEVICE_DETAILS& details);
+
+	// XAudio2
+	IXAudio2* pXAudio2;
+	IXAudio2MasteringVoice* pMasteringVoice;
+	IXAudio2SubmixVoice* pSubmixVoice;
+
+	//3D
+	X3DAUDIO_HANDLE x3DInstance;
+
+
+	IUnknown* pReverbEffect;
+
+	D3DXVECTOR3 vListenerPos;
+	D3DXVECTOR3 vEmitterPos;
+
+	X3DAUDIO_DSP_SETTINGS dspSettings;
+	X3DAUDIO_LISTENER listener;
+	X3DAUDIO_EMITTER emitter;
+	X3DAUDIO_CONE emitterCone;
+
+	DWORD dwChannelMask;
+	UINT32 nChannels;
+
+	float fListenerAngle;
+	bool  fUseListenerCone;
+	bool  fUseInnerRadius;
+	bool  fUseRedirectToLFE;
+
+	FLOAT32 emitterAzimuths[INPUTCHANNELS];
+	FLOAT32 matrixCoefficients[INPUTCHANNELS * OUTPUTCHANNELS];
+
+
+	HRESULT hr;
+
+	friend class AudioWrapper;
+
+};
+
 class AudioWrapper{
 
 
 public:	
 
-	AudioWrapper();
+	AudioWrapper(InitAudioWrapper* i_initAudioWrapper);
 
-	HRESULT InitializeXAudio();
+	//HRESULT InitializeXAudio();
 
 	HRESULT UpdateAudio(float fElapsedTime);
 
@@ -84,21 +154,22 @@ public:
 
 	~AudioWrapper(){
 
-		pMasteringVoice->DestroyVoice();
+		//pMasteringVoice->DestroyVoice();
 		pSourceVoice->DestroyVoice();
-		pSubmixVoice->DestroyVoice();
+		//pSubmixVoice->DestroyVoice();
 
 		delete pbSampleData;
 
-		delete[] emitterAzimuths;
-		delete[] matrixCoefficients;
+		initAudioWrapper->~InitAudioWrapper();
+		//delete[] emitterAzimuths;
+		//delete[] matrixCoefficients;
 
-		SAFE_RELEASE(pReverbEffect);
-		SAFE_RELEASE(pXAudio2);	
-		
-		
+		//SAFE_RELEASE(pReverbEffect);
+		//SAFE_RELEASE(pXAudio2);	
+		//
+		//
 
-		CoUninitialize();
+		//CoUninitialize();
 	}
 
 	inline bool IsPlaing() const{
@@ -143,27 +214,29 @@ public:
 
 	inline void setEmitterPosition(const D3DXVECTOR3& iEPsition){
 
-		vEmitterPos = iEPsition;
+		initAudioWrapper->vEmitterPos = iEPsition;
 	}
 
 	inline void setListenerPosition(const D3DXVECTOR3& iLPsition){
 
-		vListenerPos = iLPsition;
+		initAudioWrapper->vListenerPos = iLPsition;
 	}
 
 	inline void TranslateEmitterPosition(const D3DXVECTOR3& iEPsition){
 
-		vEmitterPos += iEPsition;
+		initAudioWrapper->vEmitterPos += iEPsition;
 
 	}
 
 	inline void TranslateListenerPosition(const D3DXVECTOR3& iLPsition){
 
-		vListenerPos += iLPsition;
+		initAudioWrapper->vListenerPos += iLPsition;
 
 	}
 
 private:
+
+	InitAudioWrapper* initAudioWrapper;
 
 	struct STATE_AUDIO{
 
@@ -204,41 +277,42 @@ private:
 
 	HRESULT hr;
 
-	bool bInitialized;
 
-	// XAudio2
-	IXAudio2* pXAudio2;
-	IXAudio2MasteringVoice* pMasteringVoice;
+	//// XAudio2
+	//IXAudio2* pXAudio2;
+	//IXAudio2MasteringVoice* pMasteringVoice;
+	//IXAudio2SubmixVoice* pSubmixVoice;
+
 	IXAudio2SourceVoice* pSourceVoice;
-	IXAudio2SubmixVoice* pSubmixVoice;
-	IUnknown* pReverbEffect;
+
+	//IUnknown* pReverbEffect;
 	BYTE* pbSampleData;
 	XAUDIO2_BUFFER buffer;
 
 
 	// 3D
-	X3DAUDIO_HANDLE x3DInstance;
+	//X3DAUDIO_HANDLE x3DInstance;
 	int nFrameToApply3DAudio;
 
-	DWORD dwChannelMask;
-	UINT32 nChannels;
+	/*DWORD dwChannelMask;
+	UINT32 nChannels;*/
 
-	X3DAUDIO_DSP_SETTINGS dspSettings;
-	X3DAUDIO_LISTENER listener;
-	X3DAUDIO_EMITTER emitter;
-	X3DAUDIO_CONE emitterCone;
+	//X3DAUDIO_DSP_SETTINGS dspSettings;
+	//X3DAUDIO_LISTENER listener;
+	//X3DAUDIO_EMITTER emitter;
+	//X3DAUDIO_CONE emitterCone;
 
 
-	D3DXVECTOR3 vListenerPos;
-	D3DXVECTOR3 vEmitterPos;
+	//D3DXVECTOR3 vListenerPos;
+	//D3DXVECTOR3 vEmitterPos;
 
-	float fListenerAngle;
+	/*float fListenerAngle;
 	bool  fUseListenerCone;
 	bool  fUseInnerRadius;
 	bool  fUseRedirectToLFE;
 
 	FLOAT32 emitterAzimuths[INPUTCHANNELS];
-	FLOAT32 matrixCoefficients[INPUTCHANNELS * OUTPUTCHANNELS];
+	FLOAT32 matrixCoefficients[INPUTCHANNELS * OUTPUTCHANNELS];*/
 
 
 };

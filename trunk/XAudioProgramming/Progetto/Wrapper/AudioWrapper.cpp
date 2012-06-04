@@ -1,5 +1,5 @@
 #include "AudioWrapper.h"
-
+#include <cassert>
 // Must match order of g_PRESET_NAMES
 XAUDIO2FX_REVERB_I3DL2_PARAMETERS g_PRESET_PARAMS[ NUM_PRESETS ] =
 {
@@ -37,10 +37,184 @@ XAUDIO2FX_REVERB_I3DL2_PARAMETERS g_PRESET_PARAMS[ NUM_PRESETS ] =
 
 
 
-AudioWrapper::AudioWrapper():pXAudio2(nullptr),pMasteringVoice(nullptr)
-							,hr(NULL),pSourceVoice(nullptr)
+InitAudioWrapper::InitAudioWrapper():pXAudio2(nullptr),pMasteringVoice(nullptr){}
+
+
+
+HRESULT InitAudioWrapper::InitializeXAudio(){
+
+	//
+	// Initialize XAudio2
+	//
+	CoInitializeEx( NULL, COINIT_MULTITHREADED );// COINIT_MULTITHREADED
+	// Initializes the thread for multithreaded object concurrency .
+
+	UINT32 flags = 0;
+#ifdef _DEBUG
+	flags |= XAUDIO2_DEBUG_ENGINE;
+#endif
+
+	if( FAILED( hr = XAudio2Create( &pXAudio2, flags ) ) )
+	{
+		wprintf( L"Failed to init XAudio2 engine: %#X\n", hr );
+		return hr;
+	}
+
+	//
+	// Create a mastering voice
+	//
+	if( FAILED( hr = pXAudio2->CreateMasteringVoice( &pMasteringVoice ) ) )
+	{
+		wprintf( L"Failed creating mastering voice: %#X\n", hr );
+		SAFE_RELEASE( pXAudio2 );
+		CoUninitialize();
+		return hr;
+	}
+
+
+	// Check device details to make sure it's within our sample supported parameters
+	XAUDIO2_DEVICE_DETAILS details;
+	if( FAILED( hr = pXAudio2->GetDeviceDetails( 0, &details ) ) )
+	{
+		SAFE_RELEASE( pXAudio2 );
+		return hr;
+	}
+
+	if( details.OutputFormat.Format.nChannels > OUTPUTCHANNELS )
+	{
+		SAFE_RELEASE( pXAudio2 );
+		return E_FAIL;
+	}
+
+	dwChannelMask = details.OutputFormat.dwChannelMask;
+	nChannels = details.OutputFormat.Format.nChannels;
+
+	//
+	// Create reverb effect
+	//
+	flags = 0;
+#ifdef _DEBUG
+	flags |= XAUDIO2FX_DEBUG;
+#endif
+
+	if( FAILED( hr = XAudio2CreateReverb( &pReverbEffect, flags ) ) )
+	{
+		SAFE_RELEASE( pXAudio2 );
+		return hr;
+	}
+
+	//
+	// Create a submix voice
+	//
+
+	// Performance tip: you need not run global FX with the sample number
+	// of channels as the final mix.  For example, this sample runs
+	// the reverb in mono mode, thus reducing CPU overhead.
+	XAUDIO2_EFFECT_DESCRIPTOR effects[] = { { pReverbEffect, TRUE, 1 } };
+	XAUDIO2_EFFECT_CHAIN effectChain = { 1, effects };
+
+	if( FAILED( hr = pXAudio2->CreateSubmixVoice( &pSubmixVoice, 1,
+		details.OutputFormat.Format.nSamplesPerSec, 0, 0,
+		NULL, &effectChain ) ) )
+	{
+		SAFE_RELEASE( pXAudio2 );
+		SAFE_RELEASE( pReverbEffect );
+		return hr;
+	}
+
+	// Set default FX params
+	XAUDIO2FX_REVERB_PARAMETERS native;
+	ReverbConvertI3DL2ToNative( &g_PRESET_PARAMS[0], &native );
+	pSubmixVoice->SetEffectParameters( 0, &native, sizeof( native ) );
+
+	//
+	// Initialize X3DAudio
+	//  Speaker geometry configuration on the final mix, specifies assignment of channels
+	//  to speaker positions, defined as per WAVEFORMATEXTENSIBLE.dwChannelMask
+	//
+	//  SpeedOfSound - speed of sound in user-defined world units/second, used
+	//  only for doppler calculations, it must be >= FLT_MIN
+	//
+	const float SPEEDOFSOUND = X3DAUDIO_SPEED_OF_SOUND;
+
+	X3DAudioInitialize( details.OutputFormat.dwChannelMask, SPEEDOFSOUND, x3DInstance );
+
+	initialize3DSound(details);
+
+}
+
+void InitAudioWrapper::initialize3DSound(XAUDIO2_DEVICE_DETAILS& details){
+
+	vListenerPos = D3DXVECTOR3( 0, 0, float( ZMAX ) );
+	vEmitterPos = D3DXVECTOR3( 0, 0, float( ZMAX ) );
+
+	fListenerAngle = 0;
+	fUseListenerCone = TRUE;
+	fUseInnerRadius = TRUE;
+	fUseRedirectToLFE = ((details.OutputFormat.dwChannelMask & SPEAKER_LOW_FREQUENCY) != 0);
+
+	//
+	// Setup 3D audio structs
+	//
+	listener.Position = vListenerPos;
+	listener.OrientFront = D3DXVECTOR3( 0, 0, 1 );
+	listener.OrientTop = D3DXVECTOR3( 0, 1, 0 );
+	listener.pCone = (X3DAUDIO_CONE*)&Listener_DirectionalCone;
+
+	emitter.pCone = &emitterCone;
+	emitter.pCone->InnerAngle = 0.0f;
+	// Setting the inner cone angles to X3DAUDIO_2PI and
+	// outer cone other than 0 causes
+	// the emitter to act like a point emitter using the
+	// INNER cone settings only.
+	emitter.pCone->OuterAngle = 0.0f;
+	// Setting the outer cone angles to zero causes
+	// the emitter to act like a point emitter using the
+	// OUTER cone settings only.
+	emitter.pCone->InnerVolume = 0.0f;
+	emitter.pCone->OuterVolume = 1.0f;
+	emitter.pCone->InnerLPF = 0.0f;
+	emitter.pCone->OuterLPF = 1.0f;
+	emitter.pCone->InnerReverb = 0.0f;
+	emitter.pCone->OuterReverb = 1.0f;
+
+	emitter.Position = vEmitterPos;
+	emitter.OrientFront = D3DXVECTOR3( 0, 0, 1 );
+	emitter.OrientTop = D3DXVECTOR3( 0, 1, 0 );
+	emitter.ChannelCount = INPUTCHANNELS;
+	emitter.ChannelRadius = 1.0f;
+	emitter.pChannelAzimuths = emitterAzimuths;
+
+	// Use of Inner radius allows for smoother transitions as
+	// a sound travels directly through, above, or below the listener.
+	// It also may be used to give elevation cues.
+	emitter.InnerRadius = 2.0f;
+	emitter.InnerRadiusAngle = X3DAUDIO_PI/4.0f;;
+
+	emitter.pVolumeCurve = (X3DAUDIO_DISTANCE_CURVE*)&X3DAudioDefault_LinearCurve;
+	emitter.pLFECurve    = (X3DAUDIO_DISTANCE_CURVE*)&Emitter_LFE_Curve;
+	emitter.pLPFDirectCurve = NULL; // use default curve
+	emitter.pLPFReverbCurve = NULL; // use default curve
+	emitter.pReverbCurve    = (X3DAUDIO_DISTANCE_CURVE*)&Emitter_Reverb_Curve;
+	emitter.CurveDistanceScaler = 14.0f;
+	emitter.DopplerScaler = 1.0f;
+
+	dspSettings.SrcChannelCount = INPUTCHANNELS;
+	dspSettings.DstChannelCount = nChannels;
+	dspSettings.pMatrixCoefficients = matrixCoefficients;
+}
+
+
+
+
+AudioWrapper::AudioWrapper(InitAudioWrapper* i_initAudioWrapper):/*pXAudio2(nullptr),pMasteringVoice(nullptr)
+							,*/hr(NULL),pSourceVoice(nullptr)
 							,pbSampleData(nullptr),audioState()
 {
+	assert(i_initAudioWrapper);
+	initAudioWrapper = i_initAudioWrapper;
+	audioState.isInitialized = true;
+	audioState.sound3DEnabled = true;
 
 }
 
@@ -124,182 +298,10 @@ HRESULT FindMediaFileCch( WCHAR* strDestPath, int cchDest, LPCWSTR strFilename )
 	return HRESULT_FROM_WIN32( ERROR_FILE_NOT_FOUND );
 }
 
-//--------------------------------------------------------------------------------------//
-
-
-
-
-HRESULT AudioWrapper::InitializeXAudio(){
-
-	//
-	// Initialize XAudio2
-	//
-	CoInitializeEx( NULL, COINIT_MULTITHREADED );// COINIT_MULTITHREADED
-												 // Initializes the thread for multithreaded object concurrency .
-	
-	UINT32 flags = 0;
-#ifdef _DEBUG
-	flags |= XAUDIO2_DEBUG_ENGINE;
-#endif
-
-	if( FAILED( hr = XAudio2Create( &pXAudio2, flags ) ) )
-	{
-		wprintf( L"Failed to init XAudio2 engine: %#X\n", hr );
-		return hr;
-	}
-
-	//
-	// Create a mastering voice
-	//
-	if( FAILED( hr = pXAudio2->CreateMasteringVoice( &pMasteringVoice ) ) )
-	{
-		wprintf( L"Failed creating mastering voice: %#X\n", hr );
-		SAFE_RELEASE( pXAudio2 );
-		CoUninitialize();
-		return hr;
-	}
-
-
-	// Check device details to make sure it's within our sample supported parameters
-    XAUDIO2_DEVICE_DETAILS details;
-    if( FAILED( hr = pXAudio2->GetDeviceDetails( 0, &details ) ) )
-    {
-        SAFE_RELEASE( pXAudio2 );
-        return hr;
-    }
-
-    if( details.OutputFormat.Format.nChannels > OUTPUTCHANNELS )
-    {
-        SAFE_RELEASE( pXAudio2 );
-        return E_FAIL;
-    }
-
-	dwChannelMask = details.OutputFormat.dwChannelMask;
-    nChannels = details.OutputFormat.Format.nChannels;
-
-	 //
-    // Create reverb effect
-    //
-    flags = 0;
-#ifdef _DEBUG
-    flags |= XAUDIO2FX_DEBUG;
-#endif
-
-    if( FAILED( hr = XAudio2CreateReverb( &pReverbEffect, flags ) ) )
-    {
-        SAFE_RELEASE( pXAudio2 );
-        return hr;
-    }
-
-    //
-    // Create a submix voice
-    //
-
-    // Performance tip: you need not run global FX with the sample number
-    // of channels as the final mix.  For example, this sample runs
-    // the reverb in mono mode, thus reducing CPU overhead.
-    XAUDIO2_EFFECT_DESCRIPTOR effects[] = { { pReverbEffect, TRUE, 1 } };
-    XAUDIO2_EFFECT_CHAIN effectChain = { 1, effects };
-
-    if( FAILED( hr = pXAudio2->CreateSubmixVoice( &pSubmixVoice, 1,
-                                                  details.OutputFormat.Format.nSamplesPerSec, 0, 0,
-                                                  NULL, &effectChain ) ) )
-    {
-        SAFE_RELEASE( pXAudio2 );
-        SAFE_RELEASE( pReverbEffect );
-        return hr;
-    }
-
-    // Set default FX params
-    XAUDIO2FX_REVERB_PARAMETERS native;
-    ReverbConvertI3DL2ToNative( &g_PRESET_PARAMS[0], &native );
-    pSubmixVoice->SetEffectParameters( 0, &native, sizeof( native ) );
-
-	 //
-    // Initialize X3DAudio
-    //  Speaker geometry configuration on the final mix, specifies assignment of channels
-    //  to speaker positions, defined as per WAVEFORMATEXTENSIBLE.dwChannelMask
-    //
-    //  SpeedOfSound - speed of sound in user-defined world units/second, used
-    //  only for doppler calculations, it must be >= FLT_MIN
-    //
-    const float SPEEDOFSOUND = X3DAUDIO_SPEED_OF_SOUND;
-
-    X3DAudioInitialize( details.OutputFormat.dwChannelMask, SPEEDOFSOUND, x3DInstance );
-
-	initialize3DSound(details);
-
-	audioState.sound3DEnabled = true;
-
-	audioState.isInitialized = true;
-	
-
-}
-
-void AudioWrapper::initialize3DSound(XAUDIO2_DEVICE_DETAILS& details){
-
-	vListenerPos = D3DXVECTOR3( 0, 0, float( ZMAX ) );
-    vEmitterPos = D3DXVECTOR3( 0, 0, float( ZMAX ) );
-
-    fListenerAngle = 0;
-    fUseListenerCone = TRUE;
-    fUseInnerRadius = TRUE;
-    fUseRedirectToLFE = ((details.OutputFormat.dwChannelMask & SPEAKER_LOW_FREQUENCY) != 0);
-
-    //
-    // Setup 3D audio structs
-    //
-    listener.Position = vListenerPos;
-    listener.OrientFront = D3DXVECTOR3( 0, 0, 1 );
-    listener.OrientTop = D3DXVECTOR3( 0, 1, 0 );
-    listener.pCone = (X3DAUDIO_CONE*)&Listener_DirectionalCone;
-
-    emitter.pCone = &emitterCone;
-    emitter.pCone->InnerAngle = 0.0f;
-    // Setting the inner cone angles to X3DAUDIO_2PI and
-    // outer cone other than 0 causes
-    // the emitter to act like a point emitter using the
-    // INNER cone settings only.
-    emitter.pCone->OuterAngle = 0.0f;
-    // Setting the outer cone angles to zero causes
-    // the emitter to act like a point emitter using the
-    // OUTER cone settings only.
-    emitter.pCone->InnerVolume = 0.0f;
-    emitter.pCone->OuterVolume = 1.0f;
-    emitter.pCone->InnerLPF = 0.0f;
-    emitter.pCone->OuterLPF = 1.0f;
-    emitter.pCone->InnerReverb = 0.0f;
-    emitter.pCone->OuterReverb = 1.0f;
-
-    emitter.Position = vEmitterPos;
-    emitter.OrientFront = D3DXVECTOR3( 0, 0, 1 );
-    emitter.OrientTop = D3DXVECTOR3( 0, 1, 0 );
-    emitter.ChannelCount = INPUTCHANNELS;
-    emitter.ChannelRadius = 1.0f;
-    emitter.pChannelAzimuths = emitterAzimuths;
-
-    // Use of Inner radius allows for smoother transitions as
-    // a sound travels directly through, above, or below the listener.
-    // It also may be used to give elevation cues.
-    emitter.InnerRadius = 2.0f;
-    emitter.InnerRadiusAngle = X3DAUDIO_PI/4.0f;;
-
-    emitter.pVolumeCurve = (X3DAUDIO_DISTANCE_CURVE*)&X3DAudioDefault_LinearCurve;
-    emitter.pLFECurve    = (X3DAUDIO_DISTANCE_CURVE*)&Emitter_LFE_Curve;
-    emitter.pLPFDirectCurve = NULL; // use default curve
-    emitter.pLPFReverbCurve = NULL; // use default curve
-    emitter.pReverbCurve    = (X3DAUDIO_DISTANCE_CURVE*)&Emitter_Reverb_Curve;
-    emitter.CurveDistanceScaler = 14.0f;
-    emitter.DopplerScaler = 1.0f;
-
-    dspSettings.SrcChannelCount = INPUTCHANNELS;
-    dspSettings.DstChannelCount = nChannels;
-    dspSettings.pMatrixCoefficients = matrixCoefficients;
-}
 
 HRESULT AudioWrapper::PrepareAudio(const LPCWSTR fileName){
 
-	if(!bInitialized)
+	if(!audioState.isInitialized)
 		return E_FAIL;
 
 	// Se non ho inizializzato nessuna Voice
@@ -355,12 +357,12 @@ HRESULT AudioWrapper::PrepareAudio(const LPCWSTR fileName){
     //
 	XAUDIO2_SEND_DESCRIPTOR sendDescriptors[2];
 	sendDescriptors[0].Flags = XAUDIO2_SEND_USEFILTER; // LOW PASS FILTER
-    sendDescriptors[0].pOutputVoice = pMasteringVoice;
+    sendDescriptors[0].pOutputVoice = initAudioWrapper->pMasteringVoice;
     sendDescriptors[1].Flags = XAUDIO2_SEND_USEFILTER; // LOW PASS FILTER reverb-path -- omit for better performance at the cost of less realistic occlusion
-    sendDescriptors[1].pOutputVoice = pSubmixVoice;
+    sendDescriptors[1].pOutputVoice = initAudioWrapper->pSubmixVoice;
     const XAUDIO2_VOICE_SENDS sendList = { 2, sendDescriptors };
 
-	if (FAILED(hr = pXAudio2->CreateSourceVoice(&pSourceVoice,pwfx,0,2.0f,NULL,&sendList)))
+	if (FAILED(hr = initAudioWrapper->pXAudio2->CreateSourceVoice(&pSourceVoice,pwfx,0,2.0f,NULL,&sendList)))
 	{
 		wprintf( L"Failed to CreateSourceVoice of : %s\n", wavFilePath );
 		return hr;
@@ -382,6 +384,7 @@ HRESULT AudioWrapper::PrepareAudio(const LPCWSTR fileName){
 
   
 	audioState.isReady = true;
+	audioState.isStopped = true;
 
     nFrameToApply3DAudio = 0;
 
@@ -393,86 +396,86 @@ HRESULT AudioWrapper::PrepareAudio(const LPCWSTR fileName){
 
 HRESULT AudioWrapper::UpdateAudio(float fElapsedTime){
 
-	if( !bInitialized )
+	if( !audioState.isInitialized )
         return S_FALSE;
 
 	if( nFrameToApply3DAudio == 0 ){
 
 
 		// Cotrollo se io ascoltatore mi sono spostato
-		if( vListenerPos.x != listener.Position.x || vListenerPos.z != listener.Position.z){
+		if( initAudioWrapper->vListenerPos.x != initAudioWrapper->listener.Position.x || initAudioWrapper->vListenerPos.z != initAudioWrapper->listener.Position.z){
 
-			D3DXVECTOR3 vDelta = vListenerPos - listener.Position;
+			D3DXVECTOR3 vDelta = initAudioWrapper->vListenerPos - initAudioWrapper->listener.Position;
 
-            fListenerAngle = float( atan2( vDelta.x, vDelta.z ) );
+            initAudioWrapper->fListenerAngle = float( atan2( vDelta.x, vDelta.z ) );
 
             vDelta.y = 0.0f;
             D3DXVec3Normalize( &vDelta, &vDelta );
 
-            listener.OrientFront.x = vDelta.x;
-            listener.OrientFront.y = 0.f;
-            listener.OrientFront.z = vDelta.z;
+            initAudioWrapper->listener.OrientFront.x = vDelta.x;
+            initAudioWrapper->listener.OrientFront.y = 0.f;
+            initAudioWrapper->listener.OrientFront.z = vDelta.z;
 
 		}
 
 		// TODO: Da togliere
 		/*Controlli Vari*/
-		if (fUseListenerCone) 
+		if (initAudioWrapper->fUseListenerCone) 
         {
-            listener.pCone = (X3DAUDIO_CONE*)&Listener_DirectionalCone;
+            initAudioWrapper->listener.pCone = (X3DAUDIO_CONE*)&Listener_DirectionalCone;
         }
         else
         {
-            listener.pCone = NULL;
+            initAudioWrapper->listener.pCone = NULL;
         }
-        if (fUseInnerRadius)
+        if (initAudioWrapper->fUseInnerRadius)
         {
-            emitter.InnerRadius = 2.0f;
-            emitter.InnerRadiusAngle = X3DAUDIO_PI/4.0f;
+            initAudioWrapper->emitter.InnerRadius = 2.0f;
+            initAudioWrapper->emitter.InnerRadiusAngle = X3DAUDIO_PI/4.0f;
         }
         else
         {
-            emitter.InnerRadius = 0.0f;
-            emitter.InnerRadiusAngle = 0.0f;
+            initAudioWrapper->emitter.InnerRadius = 0.0f;
+            initAudioWrapper->emitter.InnerRadiusAngle = 0.0f;
         }
 
 		if( fElapsedTime > 0 )
         {
-            D3DXVECTOR3 lVelocity = ( vListenerPos - listener.Position ) / fElapsedTime;
-            listener.Position = vListenerPos;
-            listener.Velocity = lVelocity;
+            D3DXVECTOR3 lVelocity = ( initAudioWrapper->vListenerPos - initAudioWrapper->listener.Position ) / fElapsedTime;
+            initAudioWrapper->listener.Position = initAudioWrapper->vListenerPos;
+            initAudioWrapper->listener.Velocity = lVelocity;
 
-            D3DXVECTOR3 eVelocity = ( vEmitterPos - emitter.Position ) / fElapsedTime;
-            emitter.Position = vEmitterPos;
-            emitter.Velocity = eVelocity;
+            D3DXVECTOR3 eVelocity = ( initAudioWrapper->vEmitterPos - initAudioWrapper->emitter.Position ) / fElapsedTime;
+            initAudioWrapper->emitter.Position = initAudioWrapper->vEmitterPos;
+            initAudioWrapper->emitter.Velocity = eVelocity;
         }
 
         DWORD dwCalcFlags = X3DAUDIO_CALCULATE_MATRIX | X3DAUDIO_CALCULATE_DOPPLER
             | X3DAUDIO_CALCULATE_LPF_DIRECT | X3DAUDIO_CALCULATE_LPF_REVERB
             | X3DAUDIO_CALCULATE_REVERB;
-        if (fUseRedirectToLFE)
+        if (initAudioWrapper->fUseRedirectToLFE)
         {
             // On devices with an LFE channel, allow the mono source data
             // to be routed to the LFE destination channel.
             dwCalcFlags |= X3DAUDIO_CALCULATE_REDIRECT_TO_LFE;
         }
 
-		 X3DAudioCalculate( x3DInstance, &listener, &emitter, dwCalcFlags,&dspSettings );
+		 X3DAudioCalculate( initAudioWrapper->x3DInstance, &initAudioWrapper->listener, &initAudioWrapper->emitter, dwCalcFlags,&initAudioWrapper->dspSettings );
 
 		IXAudio2SourceVoice* voice = pSourceVoice;
         if( voice )
         {
             // Apply X3DAudio generated DSP settings to XAudio2
-            voice->SetFrequencyRatio( dspSettings.DopplerFactor );
-            voice->SetOutputMatrix( pMasteringVoice, INPUTCHANNELS, nChannels,
-                                    matrixCoefficients );
+            voice->SetFrequencyRatio( initAudioWrapper->dspSettings.DopplerFactor );
+            voice->SetOutputMatrix( initAudioWrapper->pMasteringVoice, INPUTCHANNELS, initAudioWrapper->nChannels,
+                                    initAudioWrapper->matrixCoefficients );
 
-            voice->SetOutputMatrix(pSubmixVoice, 1, 1, &dspSettings.ReverbLevel);
+            voice->SetOutputMatrix(initAudioWrapper->pSubmixVoice, 1, 1, &initAudioWrapper->dspSettings.ReverbLevel);
 
-            XAUDIO2_FILTER_PARAMETERS FilterParametersDirect = { LowPassFilter, 2.0f * sinf(X3DAUDIO_PI/6.0f * dspSettings.LPFDirectCoefficient), 1.0f }; // see XAudio2CutoffFrequencyToRadians() in XAudio2.h for more information on the formula used here
-            voice->SetOutputFilterParameters(pMasteringVoice, &FilterParametersDirect);
-            XAUDIO2_FILTER_PARAMETERS FilterParametersReverb = { LowPassFilter, 2.0f * sinf(X3DAUDIO_PI/6.0f * dspSettings.LPFReverbCoefficient), 1.0f }; // see XAudio2CutoffFrequencyToRadians() in XAudio2.h for more information on the formula used here
-            voice->SetOutputFilterParameters(pSubmixVoice, &FilterParametersReverb);
+            XAUDIO2_FILTER_PARAMETERS FilterParametersDirect = { LowPassFilter, 2.0f * sinf(X3DAUDIO_PI/6.0f * initAudioWrapper->dspSettings.LPFDirectCoefficient), 1.0f }; // see XAudio2CutoffFrequencyToRadians() in XAudio2.h for more information on the formula used here
+            voice->SetOutputFilterParameters(initAudioWrapper->pMasteringVoice, &FilterParametersDirect);
+            XAUDIO2_FILTER_PARAMETERS FilterParametersReverb = { LowPassFilter, 2.0f * sinf(X3DAUDIO_PI/6.0f * initAudioWrapper->dspSettings.LPFReverbCoefficient), 1.0f }; // see XAudio2CutoffFrequencyToRadians() in XAudio2.h for more information on the formula used here
+            voice->SetOutputFilterParameters(initAudioWrapper->pSubmixVoice, &FilterParametersReverb);
         }
 
 	}
@@ -515,7 +518,7 @@ void AudioWrapper::ResumeAudio(){
 	audioState.isPlaing = true;
 
 	wprintf( L" Audio Resume");
-	pXAudio2->StartEngine();
+	initAudioWrapper->pXAudio2->StartEngine();
 }
 
 void AudioWrapper::PauseAudio()
@@ -527,7 +530,7 @@ void AudioWrapper::PauseAudio()
 	audioState.isPlaing = false;
 
 	wprintf( L" Audio Paused");
-    pXAudio2->StopEngine();
+    initAudioWrapper->pXAudio2->StopEngine();
 	
 }
 
@@ -571,21 +574,21 @@ void AudioWrapper::CleanupAudio()
         pSourceVoice = NULL;
     }
 
-    if( pSubmixVoice )
+    if( initAudioWrapper->pSubmixVoice )
     {
-        pSubmixVoice->DestroyVoice();
-        pSubmixVoice = NULL;
+        initAudioWrapper->pSubmixVoice->DestroyVoice();
+        initAudioWrapper->pSubmixVoice = NULL;
     }
 
-    if( pMasteringVoice )
+    if( initAudioWrapper->pMasteringVoice )
     {
-        pMasteringVoice->DestroyVoice();
-        pMasteringVoice = NULL;
+        initAudioWrapper->pMasteringVoice->DestroyVoice();
+        initAudioWrapper->pMasteringVoice = NULL;
     }
 
-    pXAudio2->StopEngine();
-    SAFE_RELEASE( pXAudio2 );
-    SAFE_RELEASE( pReverbEffect );
+    initAudioWrapper->pXAudio2->StopEngine();
+    SAFE_RELEASE( initAudioWrapper->pXAudio2 );
+    SAFE_RELEASE( initAudioWrapper->pReverbEffect );
 
     SAFE_DELETE_ARRAY( pbSampleData );
 

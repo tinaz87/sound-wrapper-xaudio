@@ -14,27 +14,38 @@ D3DXVECTOR3 EmitterPos;
 
 int main()
 {
+	InitAudioWrapper* init = new InitAudioWrapper();
+	init->InitializeXAudio();
 
+	AudioWrapper* audioWrapper = new AudioWrapper(init);
+
+	AudioWrapper* audioWrapper1 = new AudioWrapper(init);
 
 	HKL hkl =LoadKeyboardLayoutW(L"00000410",KLF_ACTIVATE); // 00000410 codice tastira italiana
-	AudioWrapper* audioWrapper = new AudioWrapper();
+	//AudioWrapper* audioWrapper = new AudioWrapper();
 
-	audioWrapper->InitializeXAudio();
+	//audioWrapper->InitializeXAudio();
 
 	audioWrapper->PrepareAudio(L"MusicMono.wav");
+
+	//AudioWrapper* audioWrapper1 = new AudioWrapper();
+
+	//audioWrapper1->InitializeXAudio();
+
+	audioWrapper1->PrepareAudio(L"heli.wav");
 
 	short pause = VkKeyScanExW('p', hkl );
 	short resume = VkKeyScanExW('r', hkl );
 
-	
+	//
 
-	
+	//
 
 	while( !GetAsyncKeyState( VK_ESCAPE ) ){
 		audioWrapper->UpdateAudio(0.05f);
 
 
-		if (GetAsyncKeyState( pause ) && !audioWrapper->IsPaused())
+		if (GetAsyncKeyState( pause ) && !audioWrapper->IsPaused() && !audioWrapper->IsStopped() )
 		{
 			wprintf( L"\nKey Pause pressed: ");
 			audioWrapper->PauseAudio();
@@ -51,7 +62,11 @@ int main()
 		if (GetAsyncKeyState( VK_RETURN ) && !audioWrapper->IsPlaing() )
 		{
 			wprintf( L"\nKey Play pressed: ");
+
 			audioWrapper->PlayAudio();
+
+			audioWrapper1->PlayAudio();
+
 			
 		}
 
