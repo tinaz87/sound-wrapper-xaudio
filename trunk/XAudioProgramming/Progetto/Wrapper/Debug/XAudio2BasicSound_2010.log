@@ -1,5 +1,0 @@
-﻿  AudioWrapper.cpp
-c:\users\probook\desktop\master\audio programming\wrapperxaudio\progetto\wrapper\audiowrapper.h(78): warning C4154: eliminazione di un'espressione di matrice. Fornita conversione a puntatore
-c:\users\probook\desktop\master\audio programming\wrapperxaudio\progetto\wrapper\audiowrapper.h(79): warning C4154: eliminazione di un'espressione di matrice. Fornita conversione a puntatore
-c:\users\probook\desktop\master\audio programming\wrapperxaudio\progetto\wrapper\audiowrapper.cpp(144): warning C4715: 'InitAudioWrapper::InitializeXAudio': non tutti i percorsi di controllo restituiscono un valore
-  XAudio2BasicSound_2010.vcxproj -> C:\Users\PROBOOK\Desktop\MASTER\Audio Programming\WrapperXAudio\Progetto\Wrapper\Debug\XAudio2BasicSound.exe

@@ -42,37 +42,39 @@ int main()
 	//
 
 	while( !GetAsyncKeyState( VK_ESCAPE ) ){
-		audioWrapper->UpdateAudio(0.05f);
+		
+		if (audioWrapper->IsPlaing())
+		{
+			audioWrapper->UpdateAudio(0.05f);
+		}
+		
 
 
 		if (GetAsyncKeyState( pause ) && !audioWrapper->IsPaused() && !audioWrapper->IsStopped() )
 		{
-			wprintf( L"\nKey Pause pressed: ");
+			wprintf( L"\nPause ");
 			audioWrapper->PauseAudio();
 			
 		}
 
 		if (GetAsyncKeyState( resume ) && audioWrapper->IsPaused())
 		{
-			wprintf( L"\nKey Resume pressed: ");
+			wprintf( L"\nResume ");
 			audioWrapper->ResumeAudio();
 			
 		}
 
-		if (GetAsyncKeyState( VK_RETURN ) && !audioWrapper->IsPlaing() )
+		if (GetAsyncKeyState( VK_RETURN ) && !audioWrapper->IsPlaing() && !audioWrapper->IsPaused())
 		{
-			wprintf( L"\nKey Play pressed: ");
+			wprintf( L"\nPlay");
 
 			audioWrapper->PlayAudio();
-
-			audioWrapper1->PlayAudio();
-
-			
+			//audioWrapper1->PlayAudio();			
 		}
 
 		if (GetAsyncKeyState(VK_DELETE) && !audioWrapper->IsStopped() )
 		{
-			wprintf( L"\nKey Stop pressed:");
+			wprintf( L"\nStop");
 			audioWrapper->StopAudio();
 
 		}

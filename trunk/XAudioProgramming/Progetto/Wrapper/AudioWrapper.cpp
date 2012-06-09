@@ -207,8 +207,7 @@ void InitAudioWrapper::initialize3DSound(XAUDIO2_DEVICE_DETAILS& details){
 
 
 
-AudioWrapper::AudioWrapper(InitAudioWrapper* i_initAudioWrapper):/*pXAudio2(nullptr),pMasteringVoice(nullptr)
-							,*/hr(NULL),pSourceVoice(nullptr)
+AudioWrapper::AudioWrapper(InitAudioWrapper* i_initAudioWrapper):hr(NULL),pSourceVoice(nullptr)
 							,pbSampleData(nullptr),audioState()
 {
 	assert(i_initAudioWrapper);
@@ -373,7 +372,7 @@ HRESULT AudioWrapper::PrepareAudio(const LPCWSTR fileName){
     buffer.pAudioData = pbSampleData;
     buffer.Flags = XAUDIO2_END_OF_STREAM;
     buffer.AudioBytes = cbWaveSize;
-    buffer.LoopCount = XAUDIO2_LOOP_INFINITE; // Numero di Loop max 255
+    buffer.LoopCount = 0;//XAUDIO2_LOOP_INFINITE; // Numero di Loop max 255
 
     
 	if (FAILED(hr = pSourceVoice->SubmitSourceBuffer( &buffer )))
@@ -467,8 +466,7 @@ HRESULT AudioWrapper::UpdateAudio(float fElapsedTime){
         {
             // Apply X3DAudio generated DSP settings to XAudio2
             voice->SetFrequencyRatio( initAudioWrapper->dspSettings.DopplerFactor );
-            voice->SetOutputMatrix( initAudioWrapper->pMasteringVoice, INPUTCHANNELS, initAudioWrapper->nChannels,
-                                    initAudioWrapper->matrixCoefficients );
+            voice->SetOutputMatrix( initAudioWrapper->pMasteringVoice, INPUTCHANNELS, initAudioWrapper->nChannels,initAudioWrapper->matrixCoefficients );
 
             voice->SetOutputMatrix(initAudioWrapper->pSubmixVoice, 1, 1, &initAudioWrapper->dspSettings.ReverbLevel);
 
@@ -480,6 +478,15 @@ HRESULT AudioWrapper::UpdateAudio(float fElapsedTime){
 
 	}
 
+	XAUDIO2_VOICE_STATE state;
+
+	pSourceVoice->GetState(&state);
+
+	if (state.BuffersQueued == 0)
+	{
+		StopAudio();
+	}
+	
 	nFrameToApply3DAudio++;
     nFrameToApply3DAudio &= 1;
 
@@ -505,7 +512,6 @@ void AudioWrapper::StopAudio(){
 	audioState.isPaused = false;
 	audioState.isPlaing = false;
 
-	wprintf( L" Audio Stopped");
 }
 
 
@@ -517,7 +523,7 @@ void AudioWrapper::ResumeAudio(){
 	audioState.isPaused = false;
 	audioState.isPlaing = true;
 
-	wprintf( L" Audio Resume");
+	//wprintf( L" Audio Resume");
 	initAudioWrapper->pXAudio2->StartEngine();
 }
 
@@ -529,7 +535,7 @@ void AudioWrapper::PauseAudio()
 	audioState.isPaused = true;
 	audioState.isPlaing = false;
 
-	wprintf( L" Audio Paused");
+	//wprintf( L" Audio Paused");
     initAudioWrapper->pXAudio2->StopEngine();
 	
 }
@@ -547,12 +553,14 @@ HRESULT AudioWrapper::PlayAudio(){
 	audioState.isStopped = false;
 	// Se tento di fare play mentre sono in pausa
 	if ( audioState.isPaused ){
-		wprintf( L" Audio is Paused");
+
+		//wprintf( L" Audio is Paused");
 		audioState.isPlaing = false;
 		
 
 	}else{
-		wprintf( L" Audio Plaing");
+
+		//wprintf( L" Audio Plaing");
 		audioState.isPlaing = true;
 		
 	}
