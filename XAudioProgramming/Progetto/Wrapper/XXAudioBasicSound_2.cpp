@@ -1,8 +1,5 @@
 //--------------------------------------------------------------------------------------
-// File: XAudio2BasicSound.cpp
-//
-// XNA Developer Connection
-// (C) Copyright Microsoft Corp.  All rights reserved.
+// Tinazzi Mattia
 //--------------------------------------------------------------------------------------
 #include "AudioWrapper.h"
 
