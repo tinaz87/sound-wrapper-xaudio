@@ -14,6 +14,9 @@ D3DXVECTOR3 EmitterPos;
 
 int main()
 {
+	wprintf( L"P:\tPause\nENTER:\tPlay\nCANC:\tStop\nR:\tResume ");
+
+
 	InitAudioWrapper* init = new InitAudioWrapper();
 	init->InitializeXAudio();
 
